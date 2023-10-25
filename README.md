@@ -52,3 +52,17 @@ $ git checkout ch$ID
 $ cd ci-user && make test CHAPTER=$ID
 ```
 Notice: $ID is from [3,4,5,6,8]
+
+# DailySchedule
+第二阶段的日常学习记录
+
+## day1：
+1.使用vmware安装Ubuntu虚拟机，搭建环境，运行ch1
+2.运行ch1运行成功，查看rcore-tutorial-book-v3的第一章和ch1代码。
+
+## day2：
+1.继续看书和代码，处理没有riscv64-unknown-elf-gdb这个命令的问题，学习gdb调试
+
+## day3 ：
+1.运行ch2运行成功，查看rcore-tutorial-book-v3的第二章和ch2代码。
+2.学习risc—V特权和常用寄存器
