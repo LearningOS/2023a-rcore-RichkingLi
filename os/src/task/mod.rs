@@ -13,7 +13,7 @@ mod context;
 mod switch;
 #[allow(clippy::module_inception)]
 mod task;
-
+use crate::timer::get_time_ms;
 use crate::config::MAX_APP_NUM;
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
@@ -45,6 +45,16 @@ pub struct TaskManagerInner {
     tasks: [TaskControlBlock; MAX_APP_NUM],
     /// id of current `Running` task
     current_task: usize,
+    /// 停 表
+    stop_watch: usize,
+}
+
+impl TaskManagerInner {
+    fn refresh_stop_watch(&mut self) -> usize {
+        let start_time = self.stop_watch;
+        self.stop_watch = get_time_ms();
+        self.stop_watch - start_time
+    }
 }
 
 lazy_static! {
@@ -54,6 +64,8 @@ lazy_static! {
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
+            user_time: 0,
+            kernel_time: 0,
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
@@ -65,6 +77,7 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    stop_watch :0,
                 })
             },
         }
@@ -81,6 +94,8 @@ impl TaskManager {
         let task0 = &mut inner.tasks[0];
         task0.task_status = TaskStatus::Running;
         let next_task_cx_ptr = &task0.task_cx as *const TaskContext;
+        //开 始 记 录 时 间
+        inner.refresh_stop_watch();
         drop(inner);
         let mut _unused = TaskContext::zero_init();
         // before this, we should drop local variables that must be dropped manually
@@ -94,6 +109,8 @@ impl TaskManager {
     fn mark_current_suspended(&self) {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
+        // 统 计 内 核 时 间
+        inner.tasks[current].kernel_time += inner.refresh_stop_watch();
         inner.tasks[current].task_status = TaskStatus::Ready;
     }
 
@@ -101,6 +118,12 @@ impl TaskManager {
     fn mark_current_exited(&self) {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
+        // 统 计 内 核 时 间 并 输 出
+        inner.tasks[current].kernel_time += inner.refresh_stop_watch();
+        println!(
+            "[task {} exited. user_time: {} ms, kernle_time: {} ms.",
+            current, inner.tasks[current].user_time, inner.tasks[current].kernel_time
+        );
         inner.tasks[current].task_status = TaskStatus::Exited;
     }
 
@@ -135,6 +158,18 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+    /// 统计 内 核 时 间 ， 从 现 在 开 始 算 的 是 用 户 时 间
+    fn user_time_start(&self) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].kernel_time += inner.refresh_stop_watch();
+    }
+    /// 统计 用 户 时 间 ， 从 现 在 开 始 算 的 是 内 核 时 间
+    fn user_time_end(&self) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].user_time += inner.refresh_stop_watch();
+    }
 }
 
 /// Run the first task in task list.
@@ -168,4 +203,13 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+/// 统计 内 核 时 间 ， 从 现 在 开 始 算 的 是 用 户 时 间
+pub fn user_time_start() {
+    TASK_MANAGER.user_time_start()
+}
+/// 统计 用 户 时 间 ， 从 现 在 开 始 算 的 是 内 核 时 间
+pub fn user_time_end() {
+    TASK_MANAGER.user_time_end()
 }
