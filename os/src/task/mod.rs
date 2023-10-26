@@ -17,11 +17,13 @@ use crate::timer::get_time_ms;
 use crate::config::MAX_APP_NUM;
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
+use crate::syscall::TaskInfo;
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
+
 
 /// The task manager, where all the tasks are managed.
 ///
@@ -170,6 +172,26 @@ impl TaskManager {
         let current = inner.current_task;
         inner.tasks[current].user_time += inner.refresh_stop_watch();
     }
+    /// 设置任务信息
+    fn set_task_info(&self, task_info: *mut TaskInfo) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let curr_task_tcb = &mut inner.tasks[current];
+
+        let curr_time = get_time_ms();
+
+        debug!(
+            "task info current = {:#x} curr_time() = {:#x} curr start_time = {:#x}",
+            current, curr_time, curr_task_tcb.kernel_time
+        );
+	
+        unsafe {
+		 (*task_info).status = TaskStatus::Running;
+             (*task_info).time = curr_time - curr_task_tcb.kernel_time;
+            
+        }
+
+    }
 }
 
 /// Run the first task in task list.
@@ -212,4 +234,9 @@ pub fn user_time_start() {
 /// 统计 用 户 时 间 ， 从 现 在 开 始 算 的 是 内 核 时 间
 pub fn user_time_end() {
     TASK_MANAGER.user_time_end()
+}
+
+/// 统计任务信息
+pub fn set_task_info(task_info: *mut TaskInfo) {
+    TASK_MANAGER.set_task_info(task_info);
 }
